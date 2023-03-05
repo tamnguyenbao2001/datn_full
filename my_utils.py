@@ -12,13 +12,23 @@ def patch_extractor(result, img_width, img_height):
     res4 = int(result[3].item()*img_height)
     return res1, res2, res3, res4
 
-def convert_to_xywh(output,img_width,img_height):
-    xywh = torch.zeros(output.shape[0], 4)
-    xywh[:,0] = output[:,0].cpu().float()*img_width
-    xywh[:,1] = output[:,1].cpu().float()*img_height
-    xywh[:,2] = output[:,2].cpu().float()*img_width - xywh[:,0]
-    xywh[:,3] = output[:,3].cpu().float()*img_height - xywh[:,1]
-    return xywh
+def convert_to_xywh(x,img_width,img_height):
+    # xywh = torch.zeros(output.shape[0], 4)
+    # xywh[:,0] = output[:,0].cpu().float()*img_width
+    # xywh[:,1] = output[:,1].cpu().float()*img_height
+    # xywh[:,2] = output[:,2].cpu().float()*img_width - xywh[:,0]
+    # xywh[:,3] = output[:,3].cpu().float()*img_height - xywh[:,1]
+    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    z = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    y[:,0] = x[:,0].float()*img_width
+    y[:,1] = x[:,1].float()*img_height
+    y[:,2] = x[:,2].float()*img_width 
+    y[:,3] = x[:,3].float()*img_height
+    z[:,0] = (y[:,0]+y[:,2])/2
+    z[:,1] = (y[:,1]+y[:,3])/2
+    z[:,2] = y[:,2] - y[:,0]
+    z[:,3] = y[:,3] - y[:,1]
+    return z
 
 def distortion_free_resize(image, img_size):
     h, w = img_size

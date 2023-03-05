@@ -151,7 +151,8 @@ class Track:
         """
 
         # skip if current and previous frame are not initialized (1st inference)
-        if (src.any() or dst.any() is None):
+        if isinstance(src, list) or isinstance(dst, list) : return None, None
+        elif (src.any() or dst.any() is None):
             return None, None
         # skip if current and previous fames are not the same size
         elif (src.shape != dst.shape):
