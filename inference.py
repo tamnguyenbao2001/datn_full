@@ -5,6 +5,8 @@ import numpy as np
 import time
 import glob
 import torch
+from torchsummary import summary
+
 import tensorflow as tf
 import tensorflow_hub as hub
 
@@ -17,6 +19,8 @@ import os
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # strongsort root directory
 WEIGHTS = ROOT / 'weights'
+
+
 
 
 if str(ROOT /'StrongSORT-YOLO') not in sys.path:
@@ -33,13 +37,15 @@ FONTSCALE = 1
 COLOR = (255, 0, 0)
 THICKNESS = 2
 ### yolov5 weight 
-model_dir = "weights/best.pt"
-strong_sort_weights = "StrongSORT-YOLO\weights\osnet_x0_25_msmt17.pt"
-config_strongsort= 'StrongSORT-YOLO\strong_sort\configs\strong_sort.yaml'
+# model_dir = "weights/best.pt"
+model_dir = "best.engine"
+strong_sort_weights = "StrongSORT-YOLO/weights/osnet_x0_25_msmt17.pt"
+config_strongsort= 'StrongSORT-YOLO/strong_sort/configs/strong_sort.yaml'
 ### Pose estimator
 movenet_thunder = get_pose_estimator()
 
-model = torch.hub.load("ultralytics/yolov5", "custom", path = model_dir,force_reload=False)
+# model = torch.hub.load("ultralytics/yolov5", "custom", path = "/home/jetsonnx/Gumiho/Project/datn_full/weights/best.torchscript",force_reload=True)
+model = torch.hub.load('ultralytics/yolov5', 'custom', '/home/jetsonnx/Gumiho/Project/datn_full/weights/best.engine')  
 cfg = get_config()
 cfg.merge_from_file(config_strongsort)
 strongsort_model =  StrongSORT(
@@ -75,22 +81,33 @@ def visualisation():
     return visualizing_keypoints_t
 
 cap = cv2.VideoCapture(test_video_dir)
-img_height = int(cap.get(4))
-img_width = int(cap.get(3))
+# img_height = int(cap.get(4))
+# img_width = int(cap.get(3))
+img_height = 640
+img_width = 640
 cnt = 0
 ret, frame = cap.read()
-preds = model(frame[:, :, [2, 1, 0]])
-id_keypoints = {ith: [] for ith in range(len(preds.xyxyn[0]))}
+# preds = model(frame[:, :, [2, 1, 0]])
+# id_keypoints = {ith: [] for ith in range(len(preds.xyxyn[0]))}
 temp = []
 outputs = [None]
 track_id = None
 curr_frames, prev_frames = [None], [None] 
+size = (img_width,img_height)
+# result = cv2.VideoWriter('filename.avi', 
+#                          cv2.VideoWriter_fourcc(*'MJPG'),
+#                          10, size)
+# summary(model,(3,320,320))
+print(model)
 while True:
     ret, frame = cap.read()
+    frame = cv2.resize(frame,(640,640),cv2.INTER_LINEAR)
     cnt += 1
     start = time.time()
     if ret:
+        st = time.time()
         preds = model(frame[:, :, [2, 1, 0]], size = 640)
+        print("Yolo time: ", time.time()-st)
         curr_frames = frame
         if len(preds.xyxyn[0]) > 0:
             xywh = convert_to_xywh(preds.xyxyn[0][:,:4], img_width,img_height).round()
@@ -100,11 +117,12 @@ while True:
                 strongsort_model.tracker.camera_update(prev_frames, curr_frames)
             # frame = cv2.circle(frame, (int(xywh[0,0]),int(xywh[0,1])), radius = 4, color = (255, 0, 0), thickness = 4)
             outputs = strongsort_model.update(xywh.cpu(), confs.cpu(), clss.cpu(), frame[:, :, [2, 1, 0]])
+            print("Strongsort time: ",time.time()-st)
             # if len(outputs) == 0:
             #     strongsort_model.increment_ages()
-            outputs = torch.Tensor(outputs)
+            # outputs = torch.Tensor(outputs)
             for ith, pred in enumerate(outputs):
-                print("outputs ",pred)
+                # print("outputs ",pred)
                 x1, y1, x2, y2 = int(pred[0]), int(pred[1]),int(pred[2]),int(pred[3])
                 if len(outputs) != 0:
                     track_id = int(pred[4])
@@ -123,38 +141,41 @@ while True:
                     kpts = visualisation()
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2) # Red
                 
-                if cnt%10==0:
-                    if ith < len(id_keypoints):
-                        id_keypoints[ith].append(kpts)
-                if ith < len(id_keypoints):
-                    if len(id_keypoints[ith]) < 5:
-                        string_show = str(track_id) + ':stacking'
-                        cv2.putText(frame, string_show, (x1, y1-20), FONT, 
-                                    FONTSCALE, (0, 255, 0), THICKNESS, cv2.LINE_AA)
+                # if cnt%10==0:
+                #     if ith < len(id_keypoints):
+                #         id_keypoints[ith].append(kpts)
+                # if ith < len(id_keypoints):
+                #     if len(id_keypoints[ith]) < 5:
+                #         string_show = str(track_id) + ':stacking'
+                #         cv2.putText(frame, string_show, (x1, y1-20), FONT, 
+                #                     FONTSCALE, (0, 255, 0), THICKNESS, cv2.LINE_AA)
 
-                    if len(id_keypoints[ith]) >= 5:
-                        res = recognizer.predict(np.array(id_keypoints[ith][-5:]).reshape(1, 255)).argmax(1)
-                        if res == 0:
-                            string_show = str(track_id) + ':Normal'
-                            cv2.putText(frame, string_show, (x1, y1-20), FONT, 
-                                        FONTSCALE, COLOR, THICKNESS, cv2.LINE_AA)
-                        if res == 1:
-                            string_show = str(track_id) + ':Fighting'
-                            cv2.putText(frame, string_show, (x1, y1-20), FONT, 
-                                        FONTSCALE, COLOR, THICKNESS, cv2.LINE_AA)
-                        if res == 2:
-                            string_show = str(track_id) + ':Smoking'
-                            cv2.putText(frame, string_show, (x1, y1-20), FONT, 
-                                        FONTSCALE, COLOR, THICKNESS, cv2.LINE_AA)
-                        if len(id_keypoints[ith]) > 6:
-                            del id_keypoints[ith][0]
+                #     if len(id_keypoints[ith]) >= 5:
+                #         res = recognizer.predict(np.array(id_keypoints[ith][-5:]).reshape(1, 255)).argmax(1)
+                #         if res == 0:
+                #             string_show = str(track_id) + ':Normal'
+                #             cv2.putText(frame, string_show, (x1, y1-20), FONT, 
+                #                         FONTSCALE, COLOR, THICKNESS, cv2.LINE_AA)
+                #         if res == 1:
+                #             string_show = str(track_id) + ':Fighting'
+                #             cv2.putText(frame, string_show, (x1, y1-20), FONT, 
+                #                         FONTSCALE, COLOR, THICKNESS, cv2.LINE_AA)
+                #         if res == 2:
+                #             string_show = str(track_id) + ':Smoking'
+                #             cv2.putText(frame, string_show, (x1, y1-20), FONT, 
+                #                         FONTSCALE, COLOR, THICKNESS, cv2.LINE_AA)
+                #         if len(id_keypoints[ith]) > 6:
+                #             del id_keypoints[ith][0]
                 
                 prev_frames = curr_frames
+            print("processed time: ",time.time()-st)
             
         print("Thoi gian la:", time.time()- start)       
         cv2.imshow("real-time", frame)
+        # result.write(frame)
     if cv2.waitKey(10) == ord("q"):
         break
         
 cap.release()
+# result.release()
 cv2.destroyAllWindows()
